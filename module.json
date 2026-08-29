@@ -1,7 +1,7 @@
 {
     "name": "AircraftWeights",
     "alias": "aircraftweights",
-    "description": "ICAO Aircraft Weight Reference Table (DOW, MZFW, MTOW, MLW) mit Uebersteuerung je Flotte. Die Mustertabelle kennt einen Satz je ICAO — Frachter und Passagierversion desselben Musters brauchen aber verschiedene. Seit v1.1.0 liest der Sync deshalb `aw_subfleet_weights` mit Vorrang.",
+    "description": "ICAO Aircraft Weight Reference Table (DOW, MZFW, MTOW, MLW) with per-fleet override. The type table knows one set per ICAO — but freighter and passenger versions of the same type need different ones. Since v1.1.0, Sync therefore reads `aw_subfleet_weights` with priority.",
     "version": "1.2.1",
     "author": "Thomas Kant",
     "keywords": [

@@ -1,82 +1,81 @@
 # AircraftWeights
 
-phpVMS-7-Modul der German Sky Group. Hält eine **Referenztabelle für
-Flugzeuggewichte** (DOW, MZFW, MTOW, MLW) und schreibt sie auf den
-Flugzeugbestand.
+phpVMS 7 module by German Sky Group. Holds a **reference table for aircraft
+weights** (DOW, MZFW, MTOW, MLW) and writes them to the aircraft fleet.
 
-> ⚠️ **Alle Werte in diesem Modul stehen in KILOGRAMM.**
-> `phpvmsaircraft` speichert dagegen in **Pfund** — das Modul rechnet beim
-> Schreiben um (× 2,20462). Wer Werte von Hand einträgt, trägt Kilogramm ein.
+> ⚠️ **All values in this module are in KILOGRAMS.**
+> `phpvmsaircraft`, however, stores weights in **pounds** — the module
+> converts on write (× 2.20462). Anyone entering values by hand enters
+> kilograms.
 
-## Zwei Tabellen, und warum es zwei sein müssen
+## Two tables, and why there have to be two
 
-| Tabelle | Schlüssel | Zweck |
+| Table | Key | Purpose |
 |---|---|---|
-| `aw_icao_weights` | ICAO-Muster | ein Gewichtssatz je Muster |
-| `aw_subfleet_weights` | Flotte | Übersteuerung, hat **Vorrang** |
+| `aw_icao_weights` | ICAO type | one weight set per type |
+| `aw_subfleet_weights` | Fleet | override, takes **priority** |
 
-Ein Muster hat nicht einen Gewichtssatz, sondern mehrere. Die 767-300F trägt
-309.000 lb MZFW, die 767-300ER derselben ICAO nur 272.932. Wer beide aus der
-Mustertabelle bedient, gibt einer von beiden die Zahlen der anderen.
+A type doesn't have one weight set, it has several. The 767-300F carries
+309,000 lb MZFW, while the 767-300ER of the same ICAO type carries only
+272,932. Serving both from the type table alone means one of them gets the
+other's numbers.
 
-Die Übersteuerung wirkt **feldweise**: Ein NULL-Feld fällt auf die
-Mustertabelle zurück. Eine Flotte kann also nur das DOW abweichen lassen und
-den Rest aus dem Muster ziehen — genau der Normalfall beim Frachter, dessen
-Zellenlimits gleich bleiben und nur das Leergewicht niedriger ist.
+The override works **per field**: a NULL field falls back to the type table.
+So a fleet can let just the DOW differ while pulling the rest from the type —
+exactly the normal case for a freighter, whose airframe limits stay the same
+while only the empty weight is lower.
 
-## Der Fehler, der dieses Modul teuer gemacht hat
+## The bug that made this module expensive
 
-Bis **v1.1.0** las `sync()` **nur** die Mustertabelle und schrieb sie auf
-**jedes** Flugzeug des Musters. Die Übersteuerungstabelle existierte, war
-befüllt — und wurde von **keiner einzigen Codestelle gelesen**.
+Until **v1.1.0**, `sync()` read **only** the type table and wrote it to
+**every** aircraft of that type. The override table existed, was populated —
+and was read by **not a single line of code**.
 
-Jeder Klick auf „Sync" löschte damit sämtliche Frachter- und
-Variantenunterschiede im Bestand. Auf GSG-Live führte das dazu, dass **70
-Frachtflugzeuge den Passagier-Gewichtssatz ihres Musters trugen** und damit
-mehr Fracht versprachen, als sie heben konnten — die FedEx-777F etwa 102 t
-Fracht-Fare gegen 66,6 t tatsächliche Nutzlast.
+Every click on "Sync" therefore erased all freighter and variant differences
+in the fleet. On GSG-Live, this resulted in **70 freighter aircraft carrying
+the passenger weight set of their type**, promising more cargo than they
+could actually lift — the FedEx 777F, for instance, showing 102 t of cargo
+fare against 66.6 t of actual payload.
 
-⚠️ **Der Schaden war unsichtbar**, weil `DB::table()->update()` die Spalte
-`updated_at` nicht anfasst. Die Zeilen sahen unverändert aus. Gefunden wurde es
-erst über eine unabhängige Flottenprüfung.
+⚠️ **The damage was invisible**, because `DB::table()->update()` doesn't
+touch the `updated_at` column. The rows looked unchanged. It was only
+discovered through an independent fleet audit.
 
-Seit v1.1.0 lesen `sync()` und `fixLbs()` die Übersteuerung mit Vorrang — nicht
-als Sperre, sondern als **Quelle**. Sync lässt die Frachter also nicht nur in
-Ruhe, sondern hält sie aktiv richtig.
+Since v1.1.0, `sync()` and `fixLbs()` read the override with priority — not
+as a lock, but as the **source**. Sync therefore doesn't just leave freighters
+alone, it actively keeps them correct.
 
-## Bedienung
+## Usage
 
-Adminbereich → *Aircraft Weights*.
+Admin area → *Aircraft Weights*.
 
-- **Sync** — schreibt die Referenzwerte auf alle Flugzeuge. Meldet zurück,
-  wie viele davon aus einer Flotten-Übersteuerung statt aus der Mustertabelle
-  kamen.
-- **Einheiten korrigieren** (`fixLbs`) — repariert Flugzeuge, bei denen
-  Kilogramm im Pfund-Feld gelandet sind (oder umgekehrt). Beachtet die
-  Übersteuerung ebenfalls; ohne das würde dieser Knopf genau die
-  Frachtergewichte zerstören, die Sync gerade gesetzt hat.
+- **Sync** — writes the reference values to all aircraft. Reports back how
+  many of them came from a fleet override instead of the type table.
+- **Fix units** (`fixLbs`) — repairs aircraft where kilograms ended up in the
+  pounds field (or vice versa). This also respects the override; without that,
+  this button would destroy exactly the freighter weights that Sync just set.
 
-## Prüfrezept vor jeder Änderung
+## Verification query to run before every change
 
-Eine Fracht-Fare darf nie mehr versprechen, als die Zelle hebt:
+A cargo fare must never promise more than the airframe can lift:
 
 ```sql
 SELECT * FROM (
   SELECT al.icao airline, s.type, CAST(sf.capacity AS UNSIGNED) cgo_kg,
-         ROUND(AVG((a.zfw-a.dow)*0.453592)) nutzlast_kg
+         ROUND(AVG((a.zfw-a.dow)*0.453592)) payload_kg
   FROM phpvmssubfleet_fare sf
   JOIN phpvmssubfleets s ON s.id=sf.subfleet_id
   JOIN phpvmsairlines al ON al.id=s.airline_id
   JOIN phpvmsaircraft a ON a.subfleet_id=s.id
   WHERE sf.fare_id=7 AND a.dow>0 AND a.zfw>0 GROUP BY s.id) x
-WHERE cgo_kg > nutzlast_kg ORDER BY (cgo_kg-nutzlast_kg) DESC;
+WHERE cgo_kg > payload_kg ORDER BY (cgo_kg-payload_kg) DESC;
 ```
 
-Leeres Ergebnis = in Ordnung.
+Empty result = OK.
 
 ## Installation
 
-Ordner nach `modules/AircraftWeights`, dann:
+Copy the folder to `modules/AircraftWeights`, then:
 
 ```bash
 php artisan migrate

@@ -18,14 +18,14 @@
     </div>
     @endif
 
-    {{-- ICAO GEWICHTSTABELLE --}}
+    {{-- ICAO WEIGHT TABLE --}}
     <div class="card">
         <div class="card-header py-2">
-            <strong>ICAO Gewichtstabelle</strong>
+            <strong>ICAO Weight Table</strong>
             <span class="ml-3 font-weight-bold text-danger" style="font-size:1rem">
-                ⚠ ALLE WERTE MÜSSEN IN KILOGRAMM (KG) EINGEGEBEN WERDEN — KEINE LBS!
+                ⚠ ALL VALUES MUST BE ENTERED IN KILOGRAMS (KG) — NOT LBS!
             </span>
-            <small class="text-muted ml-2">MZFW leer = nicht veröffentlicht</small>
+            <small class="text-muted ml-2">MZFW empty = not published</small>
         </div>
         <div class="card-body py-2">
             <form method="POST" action="{{ route('aircraftweights.admin.save') }}">
@@ -70,13 +70,13 @@
                             class="form-control form-control-sm" placeholder="https://...">
                     </div>
                     <div class="col-auto">
-                        <label class="mb-1 small">Notiz</label>
+                        <label class="mb-1 small">Note</label>
                         <input type="text" name="note" id="edit_note"
                             class="form-control form-control-sm" style="width:130px">
                     </div>
                     <div class="col-auto">
-                        <button type="submit" class="btn btn-success btn-sm">Speichern</button>
-                        <button type="button" class="btn btn-secondary btn-sm ml-1" onclick="clearForm()">Neu</button>
+                        <button type="submit" class="btn btn-success btn-sm">Save</button>
+                        <button type="button" class="btn btn-secondary btn-sm ml-1" onclick="clearForm()">New</button>
                     </div>
                 </div>
             </form>
@@ -95,7 +95,7 @@
                             <th class="text-right">MTOW</th>
                             <th class="text-right">MLW</th>
                             <th>Source</th>
-                            <th>Aktion</th>
+                            <th>Action</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -118,13 +118,13 @@
                             <td style="white-space:nowrap">
                                 <button class="btn btn-xs btn-primary"
                                     onclick="editRow({{ $w->id }},'{{ $w->icao }}','{{ addslashes($w->engine_type) }}','{{ $w->dow }}','{{ $w->mzfw }}','{{ $w->mtow }}','{{ $w->mlw }}','{{ addslashes($w->source_url) }}','{{ addslashes($w->note) }}')">
-                                    Bearbeiten
+                                    Edit
                                 </button>
                                 <form method="POST" action="{{ route('aircraftweights.admin.delete', $w->id) }}"
                                     style="display:inline"
-                                    onsubmit="return confirm('{{ $w->icao }} löschen?')">
+                                    onsubmit="return confirm('Delete {{ $w->icao }}?')">
                                     @csrf
-                                    <button type="submit" class="btn btn-xs btn-danger">Löschen</button>
+                                    <button type="submit" class="btn btn-xs btn-danger">Delete</button>
                                 </form>
                             </td>
                         </tr>
@@ -135,24 +135,24 @@
         </div>
     </div>
 
-    {{-- FLUGZEUG ABGLEICH --}}
+    {{-- AIRCRAFT SYNC --}}
     <div class="card mt-3">
         <div class="card-header py-2 d-flex justify-content-between align-items-center">
             <div>
-                <strong>Flugzeug Abgleich</strong>
-                <small class="text-muted ml-2">Schreibt DOW/MZFW/MTOW/MLW direkt in die phpVMS Flugzeug-Datensätze</small>
+                <strong>Aircraft Sync</strong>
+                <small class="text-muted ml-2">Writes DOW/MZFW/MTOW/MLW directly into the phpVMS aircraft records</small>
             </div>
             <div class="d-flex">
                 <form method="POST" action="{{ route('aircraftweights.admin.fix_lbs') }}"
-                    onsubmit="return confirm('Alle Flugzeuge auf lbs-Fehler prüfen und ggf. nach kg konvertieren?')"
+                    onsubmit="return confirm('Check all aircraft for lbs errors and convert to kg where needed?')"
                     class="mr-2">
                     @csrf
-                    <button type="submit" class="btn btn-warning btn-sm">lbs → kg prüfen &amp; korrigieren</button>
+                    <button type="submit" class="btn btn-warning btn-sm">Check &amp; fix lbs → kg</button>
                 </form>
                 <form method="POST" action="{{ route('aircraftweights.admin.sync') }}"
-                    onsubmit="return confirm('Gewichte für alle Flugzeuge mit ICAO-Treffer schreiben?')">
+                    onsubmit="return confirm('Write weights for all aircraft with an ICAO match?')">
                     @csrf
-                    <button type="submit" class="btn btn-primary btn-sm">Alle synchronisieren</button>
+                    <button type="submit" class="btn btn-primary btn-sm">Sync all</button>
                 </form>
             </div>
         </div>
@@ -171,7 +171,7 @@
                         <tr>
                             <th>Registration</th>
                             <th>Subfleet</th>
-                            <th>ICAO zuweisen</th>
+                            <th>Assign ICAO</th>
                             <th class="text-right">DOW</th>
                             <th class="text-right">MZFW</th>
                             <th class="text-right">MTOW</th>
@@ -205,20 +205,20 @@
                             </td>
                             <td class="text-right">{{ $ac->_mtow ? number_format($ac->_mtow) : '' }}</td>
                             <td class="text-right">{{ $ac->_mlw ? number_format($ac->_mlw) : '' }}</td>
-                            <td><span class="badge badge-success">Gesetzt</span></td>
+                            <td><span class="badge badge-success">Set</span></td>
                             @elseif($ac->icaoWeight)
                             <td class="text-right text-muted">{{ number_format($ac->icaoWeight->dow) }}</td>
                             <td class="text-right text-muted">{{ $ac->icaoWeight->mzfw ? number_format($ac->icaoWeight->mzfw) : '—' }}</td>
                             <td class="text-right text-muted">{{ number_format($ac->icaoWeight->mtow) }}</td>
                             <td class="text-right text-muted">{{ number_format($ac->icaoWeight->mlw) }}</td>
-                            <td><span class="badge badge-warning">ICAO-Treffer (nicht sync)</span></td>
+                            <td><span class="badge badge-warning">ICAO match (not synced)</span></td>
                             @else
                             <td colspan="4"></td>
-                            <td><span class="badge badge-danger">Kein Treffer</span></td>
+                            <td><span class="badge badge-danger">No match</span></td>
                             @endif
                         </tr>
                         @empty
-                        <tr><td colspan="8" class="text-muted">Keine Flugzeuge gefunden.</td></tr>
+                        <tr><td colspan="8" class="text-muted">No aircraft found.</td></tr>
                         @endforelse
                     </tbody>
                 </table>

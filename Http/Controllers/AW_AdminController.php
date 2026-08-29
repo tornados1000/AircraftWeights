@@ -39,27 +39,26 @@ class AW_AdminController extends Controller
     }
 
     /**
-     * Flotten-Uebersteuerungen aus `aw_subfleet_weights`, nach subfleet_id.
+     * Fleet overrides from `aw_subfleet_weights`, keyed by subfleet_id.
      *
-     * WARUM DAS SEIN MUSS — der teuerste Fehler dieses Moduls:
+     * WHY THIS HAS TO EXIST — the most expensive bug in this module:
      *
-     * Die ICAO-Tabelle kennt genau EINEN Gewichtssatz je Muster. Ein Muster hat
-     * aber mehrere: Die 767-300F traegt 309.000 lb MZFW, die 767-300ER derselben
-     * ICAO nur 272.932. `sync()` schrieb bis zum 26.08.2026 den Musterwert auf
-     * JEDES Flugzeug — und hat damit jedes Mal saemtliche Frachter- und
-     * Variantenunterschiede im Bestand ausradiert.
+     * The ICAO table knows exactly ONE weight set per type. A type actually has
+     * several: the 767-300F carries 309,000 lb MZFW, while the 767-300ER of the
+     * same ICAO type carries only 272,932. Until 2026-08-26, `sync()` wrote the
+     * type value onto EVERY aircraft — erasing all freighter and variant
+     * differences in the fleet every single time.
      *
-     * Der Schaden war unsichtbar, weil `DB::table()->update()` `updated_at` nicht
-     * anfasst: Die Zeilen sahen unveraendert aus. Aufgefallen ist es erst ueber
-     * die Flottenpruefung — 70 Frachter versprachen mehr Fracht, als sie heben
-     * konnten (777F: 102 t Fare gegen 66,6 t Nutzlast), weil sie den
-     * Passagier-Gewichtssatz ihres Musters trugen.
+     * The damage was invisible because `DB::table()->update()` doesn't touch
+     * `updated_at`: the rows looked unchanged. It only surfaced through a fleet
+     * audit — 70 freighters promised more cargo than they could lift (777F:
+     * 102 t fare against 66.6 t payload), because they carried the passenger
+     * weight set of their type.
      *
-     * Die Tabelle `aw_subfleet_weights` war fuer genau diesen Fall angelegt —
-     * und wurde von KEINER Codestelle gelesen. Sie ist jetzt angeschlossen: Wo
-     * eine Flotte einen Eintrag hat, gewinnt er. Nicht als Sperre, sondern als
-     * Quelle — damit `sync()` die Frachter nicht nur in Ruhe laesst, sondern
-     * aktiv richtig haelt.
+     * The `aw_subfleet_weights` table was created for exactly this case — and
+     * was read by NO code path. It is now wired in: wherever a fleet has an
+     * entry, it wins. Not as a lock, but as the source — so `sync()` doesn't
+     * just leave freighters alone, it actively keeps them correct.
      *
      * @return array<int,object>
      */
@@ -69,14 +68,14 @@ class AW_AdminController extends Controller
     }
 
     /**
-     * Welcher Gewichtssatz gilt fuer dieses Flugzeug — in KG?
+     * Which weight set applies to this aircraft — in KG?
      *
-     * Reihenfolge: Flotten-Uebersteuerung vor Muster-Referenz, Feld fuer Feld.
-     * Eine Uebersteuerung darf also auch nur einzelne Werte setzen.
+     * Order: fleet override before type reference, field by field. So an
+     * override may also set only individual values.
      *
      * @return array{dow:?float,mzfw:?float,mtow:?float,mlw:?float}|null
      */
-    private function referenzFuer(object $aircraft, ?object $icao, array $overrides): ?array
+    private function referenceFor(object $aircraft, ?object $icao, array $overrides): ?array
     {
         $ov = $overrides[$aircraft->subfleet_id ?? 0] ?? null;
 
@@ -84,7 +83,7 @@ class AW_AdminController extends Controller
             return null;
         }
 
-        $feld = static function (string $k) use ($ov, $icao): ?float {
+        $field = static function (string $k) use ($ov, $icao): ?float {
             if ($ov !== null && isset($ov->$k) && $ov->$k !== null && $ov->$k !== '') {
                 return (float) $ov->$k;
             }
@@ -93,10 +92,10 @@ class AW_AdminController extends Controller
         };
 
         return [
-            'dow'  => $feld('dow'),
-            'mzfw' => $feld('mzfw'),
-            'mtow' => $feld('mtow'),
-            'mlw'  => $feld('mlw'),
+            'dow'  => $field('dow'),
+            'mzfw' => $field('mzfw'),
+            'mtow' => $field('mtow'),
+            'mlw'  => $field('mlw'),
         ];
     }
 
@@ -158,13 +157,13 @@ class AW_AdminController extends Controller
             AW_IcaoWeight::create($data);
         }
 
-        return redirect()->route('aircraftweights.admin.index')->with('success', 'Gespeichert.');
+        return redirect()->route('aircraftweights.admin.index')->with('success', 'Saved.');
     }
 
     public function delete(int $id)
     {
         AW_IcaoWeight::findOrFail($id)->delete();
-        return redirect()->route('aircraftweights.admin.index')->with('success', 'Gelöscht.');
+        return redirect()->route('aircraftweights.admin.index')->with('success', 'Deleted.');
     }
 
     /**
@@ -187,15 +186,15 @@ class AW_AdminController extends Controller
         $aircraft    = DB::table('aircraft')->whereNotNull('icao')->where('icao', '!=', '')->get();
         $gemischt    = $this->gemischteFlotten($aircraft, $colMap);
 
-        $geschrieben = 0;
-        $unveraendert = 0;
-        $missing     = 0;
-        $ausFlotte   = 0;
-        $uebersprungen = [];
+        $written      = 0;
+        $unchanged    = 0;
+        $missing      = 0;
+        $fromOverride = 0;
+        $skipped      = [];
 
         foreach ($aircraft as $ac) {
             $icao = $weightIndex[strtoupper($ac->icao)] ?? null;
-            $ref  = $this->referenzFuer($ac, $icao, $overrides);
+            $ref  = $this->referenceFor($ac, $icao, $overrides);
 
             if ($ref === null) {
                 $missing++;
@@ -203,12 +202,12 @@ class AW_AdminController extends Controller
             }
 
             if (isset($overrides[$ac->subfleet_id ?? 0])) {
-                $ausFlotte++;
+                $fromOverride++;
             }
 
-            // Nur Felder, die leer sind oder wirklich abweichen — Rundung ist keine Abweichung.
-            $update       = [];
-            $ueberschreibt = false;
+            // Only fields that are empty or genuinely deviate — rounding is not a deviation.
+            $update     = [];
+            $overwrites = false;
             foreach (['dow', 'mzfw', 'mtow', 'mlw'] as $feld) {
                 $spalte = $colMap[$feld];
                 if (!$spalte || $ref[$feld] === null) {
@@ -222,38 +221,38 @@ class AW_AdminController extends Controller
                     $update[$spalte] = $soll;
                 } elseif (abs($soll - $ist) > self::TOLERANZ_LB) {
                     $update[$spalte] = $soll;
-                    $ueberschreibt   = true;
+                    $overwrites      = true;
                 }
             }
 
             if (!$update) {
-                $unveraendert++;
+                $unchanged++;
                 continue;
             }
 
-            // Eine Flotte, deren Flugzeuge selbst verschiedene Gewichte tragen, hat bewusst
-            // Varianten (DLH-A21N: D-AIEO gegen D-AIEA/D-AIEP). Ein Musterwert — und auch eine
-            // Flotten-Uebersteuerung, die ja nur EINEN Satz kennt — waere dort falsch. Leere
-            // Felder werden trotzdem gefuellt, vorhandene Werte nicht ueberschrieben.
-            if ($ueberschreibt && isset($gemischt[$ac->subfleet_id ?? 0]) && empty($ac->deleted_at)) {
-                $uebersprungen[] = $ac->registration;
+            // A fleet whose own aircraft carry different weights has deliberate variants
+            // (DLH-A21N: D-AIEO vs. D-AIEA/D-AIEP). A type value — or even a fleet override,
+            // which only knows ONE set — would be wrong there. Empty fields are still filled
+            // in; existing values are not overwritten.
+            if ($overwrites && isset($gemischt[$ac->subfleet_id ?? 0]) && empty($ac->deleted_at)) {
+                $skipped[] = $ac->registration;
                 continue;
             }
 
             DB::table('aircraft')->where('id', $ac->id)->update($update);
-            $geschrieben++;
+            $written++;
         }
 
-        $msg = "Sync: {$geschrieben} Flugzeuge geaendert, {$unveraendert} stimmten schon, {$missing} ohne Referenz.";
-        if ($ausFlotte) {
-            $msg .= " {$ausFlotte} Flugzeuge beziehen ihre Werte aus einer Flotten-Uebersteuerung.";
+        $msg = "Sync: {$written} aircraft changed, {$unchanged} already matched, {$missing} without a reference.";
+        if ($fromOverride) {
+            $msg .= " {$fromOverride} aircraft get their values from a fleet override.";
         }
-        if ($uebersprungen) {
-            sort($uebersprungen);
-            $msg .= ' Nicht ueberschrieben, weil ihre Flotte bewusst verschiedene Gewichte traegt: '
-                . implode(', ', array_slice($uebersprungen, 0, 20))
-                . (count($uebersprungen) > 20 ? ' …' : '')
-                . ' — bitte einzeln zuweisen oder die Flotte aufteilen.';
+        if ($skipped) {
+            sort($skipped);
+            $msg .= ' Not overwritten, because their fleet deliberately carries different weights: '
+                . implode(', ', array_slice($skipped, 0, 20))
+                . (count($skipped) > 20 ? ' …' : '')
+                . ' — please assign these individually or split the fleet.';
         }
 
         return redirect()->route('aircraftweights.admin.index')->with('success', $msg);
@@ -330,11 +329,11 @@ class AW_AdminController extends Controller
         $noRef     = 0;
 
         foreach ($aircraft as $ac) {
-            // Auch hier gilt die Flotten-Uebersteuerung vor der Mustertabelle —
-            // sonst korrigiert dieser Knopf die Einheiten und zerstoert dabei
-            // genau die Frachtergewichte, die sync() gerade sauber gesetzt hat.
+            // Here too, the fleet override takes priority over the type table —
+            // otherwise this button would fix the units while destroying exactly
+            // the freighter weights that sync() just set correctly.
             $icao = $weightIndex[strtoupper($ac->icao)] ?? null;
-            $ref  = $this->referenzFuer($ac, $icao, $overrides);
+            $ref  = $this->referenceFor($ac, $icao, $overrides);
 
             if ($ref === null || empty($ref['mtow'])) { $noRef++; continue; }
 
@@ -356,9 +355,9 @@ class AW_AdminController extends Controller
             $converted++;
         }
 
-        $msg = "Einheiten-Korrektur: {$converted} Flugzeuge korrigiert";
-        if ($skipped) $msg .= ", {$skipped} bereits korrekt";
-        if ($noRef)   $msg .= ", {$noRef} ohne ICAO-Referenz";
+        $msg = "Unit fix: {$converted} aircraft corrected";
+        if ($skipped) $msg .= ", {$skipped} already correct";
+        if ($noRef)   $msg .= ", {$noRef} without an ICAO reference";
 
         return redirect()->route('aircraftweights.admin.index')->with('success', $msg);
     }
@@ -375,7 +374,7 @@ class AW_AdminController extends Controller
 
         if (!$w) {
             return redirect()->route('aircraftweights.admin.index')
-                ->with('error', "ICAO '{$icao}' nicht in der Gewichtstabelle gefunden.");
+                ->with('error', "ICAO '{$icao}' not found in the weight table.");
         }
 
         $colMap = $this->weightColumns();
@@ -389,6 +388,6 @@ class AW_AdminController extends Controller
         DB::table('aircraft')->where('id', $request->input('aircraft_id'))->update($update);
 
         return redirect()->route('aircraftweights.admin.index')
-            ->with('success', "Flugzeug mit ICAO '{$icao}' aktualisiert.");
+            ->with('success', "Aircraft updated with ICAO '{$icao}'.");
     }
 }

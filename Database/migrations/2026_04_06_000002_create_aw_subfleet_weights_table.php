@@ -7,21 +7,21 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Gewichts-Uebersteuerung je FLOTTE.
+ * Weight override per FLEET.
  *
- * Die Mustertabelle `aw_icao_weights` kennt genau einen Gewichtssatz je ICAO.
- * Das reicht nicht: Die 767-300F traegt 309.000 lb MZFW, die 767-300ER
- * derselben ICAO nur 272.932. Wer beide aus der Mustertabelle bedient, gibt
- * einem der beiden die Zahlen des anderen.
+ * The type table `aw_icao_weights` knows exactly one weight set per ICAO.
+ * That's not enough: the 767-300F carries 309,000 lb MZFW, while the
+ * 767-300ER of the same ICAO carries only 272,932. Serving both from the
+ * type table alone gives one of them the other's numbers.
  *
- * Diese Tabelle haelt deshalb pro Flotte einen eigenen Satz, der Vorrang hat.
- * Alle Werte in KILOGRAMM wie in `aw_icao_weights`; NULL bedeutet "fuer dieses
- * Feld gilt weiter die Mustertabelle".
+ * This table therefore holds its own set per fleet, which takes priority.
+ * All values in KILOGRAMS as in `aw_icao_weights`; NULL means "the type
+ * table still applies for this field".
  *
- * ⚠ Diese Datei wurde am 26.08.2026 nachtraeglich wiederhergestellt. Die
- *   Migration war auf GSG-Live gelaufen (Eintrag in `migrations` vorhanden),
- *   die Datei selbst aber im Modul nicht mehr da — eine Neuinstallation haette
- *   die Tabelle also nicht bekommen, und `sync()` braucht sie seit v1.1.0.
+ * ⚠ This file was restored on 2026-08-26. The migration had already run on
+ *   GSG-Live (entry present in `migrations`), but the file itself was no
+ *   longer in the module — so a fresh install would not have gotten the
+ *   table, and `sync()` has needed it since v1.1.0.
  */
 return new class extends Migration
 {
